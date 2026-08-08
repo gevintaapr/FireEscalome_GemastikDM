@@ -1,0 +1,19 @@
+# Abaikan folder data lokal/cache/drive
+data_raw/
+data_processed/
+*.csv
+*.tif
+*.parquet
+*.shp
+*.json
+
+# Abaikan file konfigurasi lokal
+config.py
+.env
+
+# Abaikan cache Python & IDE
+__pycache__/
+.ipynb_checkpoints/
+.vscode/
+.idea/
+*.pyc
