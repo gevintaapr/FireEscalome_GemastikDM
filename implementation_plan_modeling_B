@@ -1,0 +1,24 @@
+# Rencana Implementasi: Tahap 4 (Baseline Modeling LightGBM)
+
+Script `11_modeling_lightgbm.py` ini dirancang sebagai jembatan (*handover*) yang elegan untuk Person B. Tujuannya adalah membuktikan bahwa dataset yang kita buat benar-benar berbobot dan bisa menghasilkan klasifikasi eskalasi yang akurat.
+
+## 1. Persiapan Data (Feature Selection)
+Model *Machine Learning* tidak butuh ID, jadi kita akan membuang kolom yang tidak relevan:
+*   **Target (Y):** `label_escalation` (0 atau 1)
+*   **Dibuang (Drop):** `cluster_id`, `latitude`, `longitude`, `island`.
+*   **Fitur Analisis (X):** `elevation`, `slope`, `aspect`, `is_peatland`, `ndvi_current`, `ndvi_delta_16d`, `population_density`, `road_distance`, `precipitation_dry_streak`, `cumulative_precip_14d`, `windspeed_10m_max`, `temperature_2m_max`, serta **4 Fitur Interaksi Bintang Lima** yang baru saja kita buat.
+
+## 2. Strategi Pemodelan & Imbalance
+Kasus karhutla adalah kasus *Extreme Imbalance* (Api yang meledak menjadi raksasa jumlahnya sangat sedikit dibandingkan yang padam sendiri).
+*   **Data Split:** Pembagian acak 80% Data Latih (Training) dan 20% Data Uji (Testing) menggunakan metode `stratify` (memastikan rasio kelas 1 dan 0 tetap seimbang di kedua set).
+*   **Algoritma:** `LightGBM Classifier`. Algoritma ini dipilih karena sangat kuat menangani fitur tabrakan tanpa perlu normalisasi (*Scaling*) dan sangat cepat.
+*   **Penanganan Imbalance:** Menggunakan parameter bawaan LightGBM `scale_pos_weight` (memberikan penalti berat jika model salah menebak api yang berekskalasi).
+
+## 3. Evaluasi & Visualisasi (Bukti untuk Juri)
+Selain mencetak angka, script ini akan secara otomatis membuat dan menyimpan dua buah grafik (*plot*) yang sangat cantik untuk presentasi/laporan:
+1.  **Feature Importance Plot:** Grafik batang yang menunjukkan fitur mana yang paling penting. Ini adalah senjata utama untuk membuktikan kepada dewan juri bahwa penemuan *Feature Engineering* (seperti *Wind Alignment* & *Fuel Danger*) benar-benar terpakai oleh sistem.
+2.  **Confusion Matrix:** Peta kotak evaluasi (True Positive, False Negative, dll).
+3.  **Metrik Cetak:** Precision, Recall, F1-Score, dan ROC-AUC.
+
+## User Review Required
+Karena script ini nantinya akan dioper ke temanmu (Person B) untuk diulik lebih jauh (mungkin ditambah *Hyperparameter Tuning* atau diubah menjadi model *Graph*), apakah kerangka dasar/baseline evaluasi ini sudah dirasa pas sebagai batu loncatan awal? Jika setuju, saya akan langsung buat kodingannya!
