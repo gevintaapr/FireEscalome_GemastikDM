@@ -1,0 +1,47 @@
+# Implementasi Tahap 2: Pembentukan Label Final (DBSCAN & Persentil-95)
+
+Tahap ini akan mengolah data `firms_master_features.csv` untuk membentuk unit analisis berupa *Cluster* dan memberikan `Label 1` (Eskalasi) atau `Label 0` (Non-Eskalasi).
+
+## User Review Required & Open Questions
+
+> [!WARNING]
+> Di dokumen proposal finalmu (Bab 5, Langkah 1), metode yang tertulis adalah menggunakan **Grid Spasial 0.1° (~11km)** sebagai unit analisis, BUKAN algoritma clustering seperti DBSCAN. 
+> 
+> Menggunakan Grid memang lebih simpel dan cepat (seperti draf kodemu yang lama), tapi **DBSCAN** jauh lebih akurat karena Grid seringkali "membelah" satu kebakaran besar menjadi dua sel yang berbeda secara tidak sengaja.
+> 
+> **Pertanyaan untukmu:** Apakah kamu yakin kita akan menggunakan **DBSCAN** (Spasial-Temporal) untuk ini? Jika ya, ini adalah peningkatan metode yang sangat bagus, dan saya sudah menyiapkan logikanya di bawah.
+
+## Proposed Changes
+
+### Script Data Processing Baru
+
+#### [NEW] [09_label_eskalasi.py](file:///c:/Users/Administrator/Documents/Gemastik/Karhutla/09_label_eskalasi.py)
+Script ini akan memproses data yang sudah bersih.
+
+Alur script:
+1. **Load Data:** Membaca `data_processed/firms_master_features.csv` (seluruh titik di sini sudah otomatis berstatus tervalidasi oleh MCD64A1, jadi aman).
+2. **Spatio-Temporal DBSCAN:** 
+   - Karena kita mencari *cluster* kejadian, kita tidak bisa hanya menggunakan latitude & longitude (kalau lokasinya sama tapi beda tahun, itu kebakaran yang berbeda).
+   - Kita akan menggunakan metrik gabungan: `[latitude, longitude, hari_ke_X * bobot_waktu]`.
+   - Menjalankan DBSCAN dengan jarak misal `eps = 5 km` dan jendela waktu `3 hari`. Algoritma ini akan menghasilkan `cluster_id` untuk setiap titik panas.
+3. **Agregasi per Cluster (Unit Analisis Berubah):**
+   - Mengelompokkan data berdasarkan `cluster_id`.
+   - Menghitung **hari pertama** cluster muncul.
+   - Menghitung jumlah titik panas di hari ke-1, vs hari ke-2 hingga hari ke-4 (rentang 3 hari).
+   - Menghitung **Rasio Pertumbuhan (Growth Ratio)** = `Max_Hotspots(H+1 s.d H+3) / Hotspots(H0)`.
+4. **Penentuan Label Persentil-95:**
+   - Menghitung nilai batas Persentil ke-95 dari seluruh populasi Rasio Pertumbuhan.
+   - Jika rasio pertumbuhan sebuah cluster `>` batas P-95, maka `label_escalation = 1` (karena otomatis sudah tervalidasi MCD64A1 dari skrip sebelumnya).
+   - Jika `<`, maka `label_escalation = 0`.
+5. **Output Final:**
+   - Menghasilkan dataset `cluster_master_features.csv` (bukan titik lagi, melainkan per cluster kejadian). Dataset inilah yang siap dimasukkan ke LightGBM oleh Person B.
+
+## Verification Plan
+
+### Automated Tests
+- Menampilkan visualisasi jumlah cluster yang terbentuk.
+- Menampilkan grafik distribusi rasio pertumbuhan dan letak garis potong (cutoff) Persentil-95.
+- Menampilkan `value_counts()` dari Label 0 dan Label 1 untuk memastikan datanya cukup berimbang (atau wajar jika sangat *imbalanced*, sesuai Hipotesis 1 / Paradoks Pareto di proposalmu).
+
+### Manual Verification
+- Meminta User menjalankan skrip ini dan memeriksa apakah hasilnya rasional.
