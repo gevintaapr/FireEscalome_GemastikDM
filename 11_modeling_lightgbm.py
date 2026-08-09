@@ -24,7 +24,7 @@ def main():
     
     # Define Target and Features
     target = 'label_escalation'
-    drop_cols = ['cluster_id', 'latitude', 'longitude', 'island', 'acq_date', 'latitude_weather', 'longitude_weather', 'region']
+    drop_cols = ['cluster_id', 'latitude', 'longitude', 'island', 'acq_date', 'latitude_weather', 'longitude_weather', 'region', 'growth_ratio']
     
     # Hapus kolom yang tidak relevan dengan pemodelan (ID, lokasi mutlak)
     cols_to_drop = [c for c in drop_cols if c in df.columns]
