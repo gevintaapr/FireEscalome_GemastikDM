@@ -1,0 +1,27 @@
+# Rencana Implementasi: Eksekusi Step C & D (Antropogenik, Cuaca, & Wind Alignment)
+
+Ini adalah tahapan krusial dan secara teknis paling kompleks karena melibatkan *Time-Series* cuaca dan perhitungan Spasial Trigonometri (tanpa Data Leakage). Berikut rencana algoritmanya:
+
+## 1. Step C: Fitur Antropogenik (KDTree)
+Kita akan menyambungkan titik kebakaran dengan aktivitas manusia.
+*   **Kepadatan Penduduk (WorldPop):** Membaca file `WorldPop_Density_Kalimantan/Sumatra.csv` yang sudah ada, lalu menggunakan algoritma `cKDTree` (Sangat Cepat) untuk mencarikan kepadatan penduduk terdekat dari masing-masing 2.888 titik cluster.
+*   **Jarak ke Jalan Terdekat (OSM Roads):** Membaca file raksasa `kalimantan.gpkg` dan `sumatra.gpkg` (layer `lines`/jalan) menggunakan *GeoPandas*. Kita akan memanfaatkan fungsi *Spatial Index* (`sindex.nearest`) untuk mencari jarak terpendek (dalam meter/derajat) dari pusat cluster ke jalan terdekat.
+
+## 2. Step D: Cuaca & Fitur Interaksi 
+
+### A. Defisit Hujan (Dry Streaks & Cumulative)
+Membaca `weather_all.csv` sebagai *Time-Series*. Untuk setiap cluster (misal terbakar di Riau, 15 Juli):
+*   **`cumulative_precip_14d` & `30d`:** Menjumlahkan total curah hujan dari tgl 1 s.d 14 Juli (14 hari ke belakang).
+*   **`precipitation_dry_streak`:** Menghitung mundur dari 14 Juli ke belakang, berapa hari **berturut-turut** curah hujannya di bawah 0.1 mm (Kering total) sebelum terputus oleh hari hujan.
+
+### B. Wind Alignment Score (Tanpa Kebocoran Data!)
+Sesuai kesepakatan, kita hitung ini secara "Jujur" di Hari-1:
+1. Kita ambil `winddirection_10m` pada Hari-1.
+2. Kita buka kembali data mentah `firms_master_features.csv` khusus di Hari-1 tersebut.
+3. Kita cari titik-titik tetangga (dalam radius ~10km) yang menyala bersamaan di hari itu.
+4. Kita hitung **Arah Geografis (Derajat/Azimuth)** dari pusat cluster ke pusat massa tetangganya.
+5. Menghitung $\cos(\theta)$ = Cosinus dari selisih (Sudut Arah Angin - Sudut Arah Tetangga). 
+6. Jika tidak ada tetangga di hari pertama (Api terisolasi), skor akan mutlak diisi `0`.
+
+## User Review Required
+Algoritma ini sangat akurat, namun khusus untuk membaca `kalimantan.gpkg` (865 MB) dan `sumatra.gpkg` mungkin akan memakan waktu proses sekitar 2-3 menit di RAM laptopmu karena ukuran petanya raksasa. Apakah logikanya sudah disetujui untuk saya eksekusi sekarang?
