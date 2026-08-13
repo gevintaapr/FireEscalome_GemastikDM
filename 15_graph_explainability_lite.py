@@ -55,9 +55,12 @@ EDGE_FILE = PROCESSED_B_DIR / "edge_statistics.csv"
 COMMUNITY_FILE = PROCESSED_B_DIR / "community_analysis.csv"
 CLUSTER_FILE = PROCESSED_B_DIR / "cluster_master_PersonB.csv"
 
-OUTPUT_REPORT = PROCESSED_B_DIR / "graph_explainability_report.csv"
-OUTPUT_VIZ = PROCESSED_B_DIR / "graph_visualization.png"
-OUTPUT_FACTOR_CHART = PROCESSED_B_DIR / "graph_factor_comparison.png"
+OUTPUT_REPORT        = PROCESSED_B_DIR / "graph_explainability_report.csv"
+OUTPUT_VIZ           = PROCESSED_B_DIR / "graph_visualization.png"          # dark mode, garis melengkung
+OUTPUT_VIZ_STRAIGHT  = PROCESSED_B_DIR / "graph_visualization_straight.png" # dark mode, garis lurus
+OUTPUT_VIZ_NODES     = PROCESSED_B_DIR / "graph_visualization_nodes_only.png" # hanya node, tanpa edge
+OUTPUT_VIZ_ZOOM      = PROCESSED_B_DIR / "graph_visualization_zoom.png"      # zoom kluster terpadat
+OUTPUT_FACTOR_CHART  = PROCESSED_B_DIR / "graph_factor_comparison.png"
 
 # Komponen edge
 FACTOR_COLS = ["spatial_decay", "wind_alignment", "slope_direction", "peatland_continuity"]
@@ -68,12 +71,12 @@ FACTOR_LABELS = {
     "peatland_continuity": "Peatland Continuity (Gambut)",
 }
 
-# Warna per faktor
+# Warna per faktor — dipilih kontras terhadap merah/abu node
 FACTOR_COLORS = {
-    "spatial_decay": "#4ECDC4",
-    "wind_alignment": "#FF6B6B",
-    "slope_direction": "#45B7D1",
-    "peatland_continuity": "#96CEB4",
+    "spatial_decay":       "#2ECC71",   # Hijau  — penularan karena jarak dekat
+    "wind_alignment":      "#3498DB",   # Biru   — penularan karena angin
+    "slope_direction":     "#F39C12",   # Oranye — penularan karena lereng
+    "peatland_continuity": "#8E44AD",   # Ungu   — penularan karena gambut
 }
 
 
@@ -319,75 +322,363 @@ def plot_factor_comparison(df_edges):
 # VISUALISASI 6: Gambar Graf (Node + Edge)
 # ==============================================================
 
-def plot_graph_visualization(G):
-    """Visualisasi graf dengan warna edge berdasarkan faktor dominan."""
+def plot_graph_visualization(G, output_path=None, curved=True, show_edges=True):
+    """Visualisasi graf — edge diwarnai berdasarkan faktor dominan penularan api.
+    
+    Args:
+        G           : NetworkX graph
+        output_path : Path file output (default = OUTPUT_VIZ)
+        curved      : True = garis melengkung, False = garis lurus
+        show_edges  : True = tampilkan edge berwarna, False = hanya node saja
+    """
+    if output_path is None:
+        output_path = OUTPUT_VIZ
     print("\n[VISUALISASI] Membuat peta graf spatio-temporal...")
 
     if G.number_of_edges() == 0:
         print("  Tidak ada edge — skip visualisasi graf.")
         return
 
-    fig, ax = plt.subplots(1, 1, figsize=(16, 12))
+    fig, ax = plt.subplots(1, 1, figsize=(18, 13))
+    fig.patch.set_facecolor("#1A1A2E")
+    ax.set_facecolor("#16213E")
 
-    # Posisi node berdasarkan koordinat lat/lon
+    # Pisahkan node yang punya edge (connected) vs terisolasi
+    connected_nodes = set()
+    for u, v in G.edges():
+        connected_nodes.add(u)
+        connected_nodes.add(v)
+
     pos = {}
-    node_colors = []
-    node_sizes = []
-
     for node, data in G.nodes(data=True):
         lon = data.get("longitude", 0)
         lat = data.get("latitude", 0)
         pos[node] = (lon, lat)
 
-        # Warna: merah = eskalasi, abu = non-eskalasi
+    # --- Gambar node terisolasi dulu (background, sangat kecil & transparan) ---
+    isolated_nodes = [n for n in G.nodes() if n not in connected_nodes]
+    isolated_colors = []
+    for node in isolated_nodes:
+        data = G.nodes[node]
         if data.get("label_escalation", 0) == 1:
-            node_colors.append("#FF4444")
-            node_sizes.append(80)
+            isolated_colors.append("#FF4444")
         else:
-            node_colors.append("#CCCCCC")
-            node_sizes.append(15)
+            isolated_colors.append("#555577")
 
-    # Warna edge berdasarkan faktor dominan
-    edge_colors = []
-    edge_widths = []
-    for u, v, data in G.edges(data=True):
-        factor = data.get("dominant_factor", "spatial_decay")
-        edge_colors.append(FACTOR_COLORS.get(factor, "#999999"))
-        weight = data.get("weight", 0.1)
-        edge_widths.append(max(0.3, weight * 3))
+    if isolated_nodes:
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=isolated_nodes, ax=ax,
+            node_color=isolated_colors, node_size=6,
+            alpha=0.25, edgecolors="none"
+        )
 
-    # Gambar edge
-    nx.draw_networkx_edges(G, pos, ax=ax, edge_color=edge_colors,
-                           width=edge_widths, alpha=0.5, arrows=True,
-                           arrowsize=5, connectionstyle="arc3,rad=0.1")
+    # --- Gambar edge dengan warna berdasarkan faktor dominan ---
+    if show_edges:
+        rad = 0.15 if curved else 0.0
+        factor_edges = {f: [] for f in FACTOR_COLORS}
+        for u, v, data in G.edges(data=True):
+            factor = data.get("dominant_factor", "spatial_decay")
+            if factor in factor_edges:
+                factor_edges[factor].append((u, v))
 
-    # Gambar node
-    nx.draw_networkx_nodes(G, pos, ax=ax, node_color=node_colors,
-                           node_size=node_sizes, alpha=0.8, edgecolors="white",
-                           linewidths=0.3)
+        for factor, edges_list in factor_edges.items():
+            if not edges_list:
+                continue
+            color = FACTOR_COLORS[factor]
+            nx.draw_networkx_edges(
+                G, pos, edgelist=edges_list, ax=ax,
+                edge_color=color, width=2.0, alpha=0.85,
+                arrows=True, arrowsize=12,
+                connectionstyle=f"arc3,rad={rad}",
+                arrowstyle="-|>",
+                min_source_margin=6, min_target_margin=6
+            )
 
-    # Legend
+    # --- Gambar node yang terhubung (foreground, lebih besar & jelas) ---
+    connected_esc    = [n for n in connected_nodes if G.nodes[n].get("label_escalation", 0) == 1]
+    connected_nonesc = [n for n in connected_nodes if G.nodes[n].get("label_escalation", 0) == 0]
+
+    if connected_nonesc:
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=connected_nonesc, ax=ax,
+            node_color="#AAAACC", node_size=60,
+            alpha=0.9, edgecolors="white", linewidths=0.8
+        )
+    if connected_esc:
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=connected_esc, ax=ax,
+            node_color="#FF2222", node_size=130,
+            alpha=1.0, edgecolors="white", linewidths=1.5
+        )
+
+    # --- Legend ---
     legend_elements = [
-        mpatches.Patch(color="#FF4444", label="Node Eskalasi"),
-        mpatches.Patch(color="#CCCCCC", label="Node Non-Eskalasi"),
+        mpatches.Patch(facecolor="#FF2222", edgecolor="white", linewidth=1,
+                       label="Node Eskalasi (api besar)"),
+        mpatches.Patch(facecolor="#AAAACC", edgecolor="white", linewidth=0.8,
+                       label="Node Non-Eskalasi (api kecil)"),
+        mpatches.Patch(facecolor="#555577", alpha=0.4, label="Node Terisolasi (tidak terhubung)"),
     ]
     for factor, color in FACTOR_COLORS.items():
         short_name = FACTOR_LABELS.get(factor, factor).split(" (")[0]
-        legend_elements.append(mpatches.Patch(color=color, label=f"Edge: {short_name}"))
+        legend_elements.append(
+            mpatches.Patch(facecolor=color, label=f"Edge: {short_name}")
+        )
 
-    ax.legend(handles=legend_elements, loc="upper left", fontsize=9,
-              framealpha=0.9, edgecolor="#CCCCCC")
+    leg = ax.legend(
+        handles=legend_elements, loc="upper left", fontsize=10,
+        framealpha=0.85, edgecolor="#AAAACC", facecolor="#1A1A2E",
+        labelcolor="white", title="Keterangan", title_fontsize=11
+    )
+    leg.get_title().set_color("white")
 
-    ax.set_xlabel("Longitude", fontsize=11)
-    ax.set_ylabel("Latitude", fontsize=11)
-    ax.set_title("Spatio-Temporal Fire Propagation Graph\nDecoding the Fire Escalome",
-                 fontsize=14, fontweight="bold")
-    ax.grid(True, alpha=0.2)
-    ax.set_facecolor("#F8F9FA")
+    ax.set_xlabel("Longitude", fontsize=12, color="white")
+    ax.set_ylabel("Latitude", fontsize=12, color="white")
+    ax.tick_params(colors="white")
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#444466")
+
+    total_esc_conn = len(connected_esc)
+    if show_edges:
+        style_info = "Garis Lurus" if not curved else "Garis Melengkung"
+        title_str = (
+            f"Spatio-Temporal Fire Propagation Graph — FireEscalome\n"
+            f"{G.number_of_edges()} Edge Penularan Api  |  Warna Edge = Faktor Penyebab  |  "
+            f"{total_esc_conn} Node Eskalasi Terhubung  [{style_info}]"
+        )
+    else:
+        title_str = (
+            f"Spatio-Temporal Fire Propagation Graph — FireEscalome\n"
+            f"Distribusi Node  |  Merah = Eskalasi  |  {total_esc_conn} Node Eskalasi Terhubung"
+        )
+    ax.set_title(title_str, fontsize=13, fontweight="bold", color="white", pad=15)
+    ax.grid(True, alpha=0.1, color="white")
 
     plt.tight_layout()
-    plt.savefig(OUTPUT_VIZ, dpi=150, bbox_inches="tight", facecolor="white")
-    print(f"  Graf tersimpan: {OUTPUT_VIZ}")
+    plt.savefig(output_path, dpi=180, bbox_inches="tight", facecolor="#1A1A2E")
+    print(f"  Graf tersimpan: {output_path}")
+    plt.close()
+
+
+# ==============================================================
+# VISUALISASI 7: Zoom-In Kluster Terpadat
+# ==============================================================
+
+def plot_graph_zoom(G, output_path=None, padding_deg=0.15):
+    """Zoom-in ke area kluster yang paling padat eskalasinya.
+    
+    Strategi:
+    - Cari area 1° x 1° yang paling banyak mengandung node eskalasi terhubung.
+    - Gambar ulang dengan node besar, edge tebal, dan panah yang jelas.
+    """
+    if output_path is None:
+        output_path = OUTPUT_VIZ_ZOOM
+
+    print("\n[VISUALISASI ZOOM] Mencari kluster terpadat...")
+
+    if G.number_of_edges() == 0:
+        print("  Tidak ada edge — skip zoom.")
+        return
+
+    # --- Kumpulkan koordinat semua node terhubung ---
+    connected_nodes = set()
+    for u, v in G.edges():
+        connected_nodes.add(u)
+        connected_nodes.add(v)
+
+    pos = {}
+    for node, data in G.nodes(data=True):
+        lon = data.get("longitude", 0)
+        lat = data.get("latitude", 0)
+        pos[node] = (lon, lat)
+
+    # --- Strategi: cari area dengan konsentrasi EDGE tertinggi ---
+    # Hitung midpoint setiap edge
+    edge_midpoints = []
+    for u, v, d in G.edges(data=True):
+        mx = (pos[u][0] + pos[v][0]) / 2
+        my = (pos[u][1] + pos[v][1]) / 2
+        edge_midpoints.append((mx, my, u, v, d))
+
+    # Grid search: kotak 0.5°x0.5° dengan edge terbanyak
+    step = 0.25
+    all_lons_e = [ep[0] for ep in edge_midpoints]
+    all_lats_e = [ep[1] for ep in edge_midpoints]
+
+    best_cx, best_cy = all_lons_e[0], all_lats_e[0]
+    best_count = 0
+
+    lon_range = [round(min(all_lons_e) + i * step, 4)
+                 for i in range(int((max(all_lons_e) - min(all_lons_e)) / step) + 2)]
+    lat_range = [round(min(all_lats_e) + i * step, 4)
+                 for i in range(int((max(all_lats_e) - min(all_lats_e)) / step) + 2)]
+
+    for lon_c in lon_range:
+        for lat_c in lat_range:
+            count = sum(
+                1 for ep in edge_midpoints
+                if abs(ep[0] - lon_c) <= 0.5 and abs(ep[1] - lat_c) <= 0.5
+            )
+            if count > best_count:
+                best_count = count
+                best_cx, best_cy = lon_c, lat_c
+
+    cx, cy = best_cx, best_cy
+    print(f"  Pusat kluster (lon, lat): ({cx:.4f}, {cy:.4f}), {best_count} edge di sekitarnya")
+
+    x_min, x_max = cx - padding_deg, cx + padding_deg
+    y_min, y_max = cy - padding_deg, cy + padding_deg
+
+    # Filter node dan edge dalam area zoom
+    nodes_in_zoom = [
+        n for n in connected_nodes
+        if x_min <= pos[n][0] <= x_max and y_min <= pos[n][1] <= y_max
+    ]
+    edges_in_zoom = [
+        (u, v, d) for u, v, d in G.edges(data=True)
+        if u in nodes_in_zoom and v in nodes_in_zoom
+    ]
+
+    print(f"  Area zoom: lon [{x_min:.2f}, {x_max:.2f}], lat [{y_min:.2f}, {y_max:.2f}]")
+    print(f"  Node dalam zoom: {len(nodes_in_zoom)}, Edge dalam zoom: {len(edges_in_zoom)}")
+
+    # Perlebar sedikit jika edge kurang dari 5
+    while len(edges_in_zoom) < 5 and padding_deg < 1.0:
+        padding_deg += 0.05
+        x_min, x_max = cx - padding_deg, cx + padding_deg
+        y_min, y_max = cy - padding_deg, cy + padding_deg
+        nodes_in_zoom = [
+            n for n in connected_nodes
+            if x_min <= pos[n][0] <= x_max and y_min <= pos[n][1] <= y_max
+        ]
+        edges_in_zoom = [
+            (u, v, d) for u, v, d in G.edges(data=True)
+            if u in nodes_in_zoom and v in nodes_in_zoom
+        ]
+    print(f"  Final: padding={padding_deg:.2f}°, {len(nodes_in_zoom)} node, {len(edges_in_zoom)} edge")
+
+    # --- Plot ---
+    fig, ax = plt.subplots(1, 1, figsize=(16, 14))
+    fig.patch.set_facecolor("#1A1A2E")
+    ax.set_facecolor("#16213E")
+
+    # Gambar edge per faktor — garis LURUS, tebal, panah besar
+    factor_edge_map = {f: [] for f in FACTOR_COLORS}
+    for u, v, data in edges_in_zoom:
+        factor = data.get("dominant_factor", "spatial_decay")
+        if factor in factor_edge_map:
+            factor_edge_map[factor].append((u, v))
+
+    for factor, elist in factor_edge_map.items():
+        if not elist:
+            continue
+        color = FACTOR_COLORS[factor]
+        nx.draw_networkx_edges(
+            G, pos, edgelist=elist, ax=ax,
+            edge_color=color, width=3.5, alpha=0.92,
+            arrows=True, arrowsize=25,
+            connectionstyle="arc3,rad=0.0",   # garis LURUS
+            arrowstyle="-|>",
+            min_source_margin=10, min_target_margin=10
+        )
+
+    # Gambar node di dalam zoom
+    zoom_esc    = [n for n in nodes_in_zoom if G.nodes[n].get("label_escalation", 0) == 1]
+    zoom_nonesc = [n for n in nodes_in_zoom if G.nodes[n].get("label_escalation", 0) == 0]
+
+    if zoom_nonesc:
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=zoom_nonesc, ax=ax,
+            node_color="#AAAACC", node_size=250,
+            alpha=0.95, edgecolors="white", linewidths=1.5
+        )
+    if zoom_esc:
+        nx.draw_networkx_nodes(
+            G, pos, nodelist=zoom_esc, ax=ax,
+            node_color="#FF2222", node_size=500,
+            alpha=1.0, edgecolors="white", linewidths=2.5
+        )
+
+    # Label node (hanya node eskalasi di zoom)
+    labels = {n: str(n) for n in zoom_esc}
+    nx.draw_networkx_labels(
+        G, pos, labels=labels, ax=ax,
+        font_size=8, font_color="white", font_weight="bold"
+    )
+
+    # --- Legend ---
+    legend_elements = [
+        mpatches.Patch(facecolor="#FF2222", edgecolor="white", linewidth=1.5,
+                       label="Node Eskalasi (api besar)"),
+        mpatches.Patch(facecolor="#AAAACC", edgecolor="white", linewidth=1,
+                       label="Node Non-Eskalasi (api kecil)"),
+    ]
+    for factor, color in FACTOR_COLORS.items():
+        short_name = FACTOR_LABELS.get(factor, factor).split(" (")[0]
+        legend_elements.append(
+            mpatches.Patch(facecolor=color, label=f"Edge: {short_name}")
+        )
+
+    leg = ax.legend(
+        handles=legend_elements, loc="upper left", fontsize=11,
+        framealpha=0.9, edgecolor="#AAAACC", facecolor="#1A1A2E",
+        labelcolor="white", title="Keterangan", title_fontsize=12
+    )
+    leg.get_title().set_color("white")
+
+    # Zoom axis
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel("Longitude", fontsize=13, color="white")
+    ax.set_ylabel("Latitude", fontsize=13, color="white")
+    ax.tick_params(colors="white", labelsize=10)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#444466")
+
+    # --- Deteksi nama lokasi berdasarkan koordinat ---
+    def get_location_name(lon, lat):
+        """Mengembalikan nama pulau/provinsi berdasarkan koordinat kasar."""
+        if 108 <= lon <= 119 and -4 <= lat <= 7:
+            if lon < 112:
+                return "Kalimantan Barat"
+            elif lon < 115 and lat > 0:
+                return "Kalimantan Utara/Timur"
+            elif lon < 115 and lat <= 0:
+                return "Kalimantan Tengah"
+            elif lon >= 115 and lat < -1:
+                return "Kalimantan Selatan"
+            else:
+                return "Kalimantan Timur"
+        elif 95 <= lon <= 106 and -6 <= lat <= 6:
+            if lat > 2:
+                return "Aceh / Sumatra Utara"
+            elif lat > 0:
+                return "Riau / Sumatra Barat"
+            elif lat > -2:
+                return "Jambi / Riau"
+            else:
+                return "Sumatra Selatan / Lampung"
+        elif 119 <= lon <= 127 and -4 <= lat <= 2:
+            return "Sulawesi"
+        elif lon > 130:
+            return "Papua"
+        else:
+            return "Indonesia"
+
+    loc_name = get_location_name(cx, cy)
+
+    ax.set_title(
+        f"ZOOM: Kluster Terpadat — {loc_name}\n"
+        f"Koordinat Pusat: Lon {cx:.3f}\u00b0  Lat {cy:.3f}\u00b0  |  "
+        f"{len(edges_in_zoom)} Edge  |  {len(zoom_esc)} Node Eskalasi\n"
+        f"Warna Garis = Faktor Penyebab Penularan Api",
+        fontsize=12, fontweight="bold", color="white", pad=15
+    )
+    ax.grid(True, alpha=0.15, color="white", linestyle="--")
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor="#1A1A2E")
+    print(f"  Zoom graf tersimpan: {output_path}")
     plt.close()
 
 
@@ -446,7 +737,18 @@ def main():
 
     # --- Visualisasi ---
     plot_factor_comparison(df_edges)
-    plot_graph_visualization(G)
+
+    print("\n[VISUALISASI 6a] Peta graf — garis melengkung (sudah ada)...")
+    plot_graph_visualization(G, output_path=OUTPUT_VIZ, curved=True, show_edges=True)
+
+    print("\n[VISUALISASI 6b] Peta graf — garis LURUS...")
+    plot_graph_visualization(G, output_path=OUTPUT_VIZ_STRAIGHT, curved=False, show_edges=True)
+
+    print("\n[VISUALISASI 6c] Peta node saja (tanpa garis edge)...")
+    plot_graph_visualization(G, output_path=OUTPUT_VIZ_NODES, curved=False, show_edges=False)
+
+    print("\n[VISUALISASI 7] Zoom-in kluster terpadat (garis lurus + panah jelas)...")
+    plot_graph_zoom(G, output_path=OUTPUT_VIZ_ZOOM)
 
     # --- Simpan report ---
     save_report(df_comparison, df_edges)
