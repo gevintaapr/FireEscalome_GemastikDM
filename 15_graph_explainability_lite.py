@@ -38,6 +38,12 @@ matplotlib.use("Agg")  # Non-interactive backend
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+try:
+    import contextily as ctx
+except ImportError:
+    ctx = None
+
+
 # ==============================================================
 # KONFIGURASI
 # ==============================================================
@@ -453,6 +459,14 @@ def plot_graph_visualization(G, output_path=None, curved=True, show_edges=True):
         )
     ax.set_title(title_str, fontsize=13, fontweight="bold", color="white", pad=15)
     ax.grid(True, alpha=0.1, color="white")
+    ax.set_aspect('equal')
+
+    # --- Tambahkan Basemap Peta Indonesia (Contextily) ---
+    if ctx is not None:
+        try:
+            ctx.add_basemap(ax, crs="EPSG:4326", source=ctx.providers.CartoDB.DarkMatterNoLabels, alpha=0.7)
+        except Exception as e:
+            print(f"  [WARNING] Gagal memuat peta dari contextily: {e}")
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=180, bbox_inches="tight", facecolor="#1A1A2E")
@@ -675,6 +689,14 @@ def plot_graph_zoom(G, output_path=None, padding_deg=0.15):
         fontsize=12, fontweight="bold", color="white", pad=15
     )
     ax.grid(True, alpha=0.15, color="white", linestyle="--")
+    ax.set_aspect('equal')
+
+    # --- Tambahkan Basemap Peta Indonesia (Contextily) ---
+    if ctx is not None:
+        try:
+            ctx.add_basemap(ax, crs="EPSG:4326", source=ctx.providers.CartoDB.DarkMatter, alpha=0.7)
+        except Exception as e:
+            print(f"  [WARNING] Gagal memuat peta dari contextily: {e}")
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=200, bbox_inches="tight", facecolor="#1A1A2E")
